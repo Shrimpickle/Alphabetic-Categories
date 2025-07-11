@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alphabet Categories Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX transformation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        window.__firebase_config = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        window.__initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Make Firebase functions available globally for the React component
+        window.firebaseApp = initializeApp(JSON.parse(window.__firebase_config));
+        window.firebaseAuth = getAuth(window.firebaseApp);
+        window.firebaseFirestore = getFirestore(window.firebaseApp);
+        window.firebaseSignInAnonymously = signInAnonymously;
+        window.firebaseSignInWithCustomToken = signInWithCustomToken;
+        window.firebaseOnAuthStateChanged = onAuthStateChanged;
+        window.firebaseDoc = doc;
+        window.firebaseSetDoc = setDoc;
+        window.firebaseGetDoc = getDoc;
+        window.firebaseOnSnapshot = onSnapshot;
+        window.firebaseCollection = collection;
+        window.firebaseQuery = query;
+        window.firebaseWhere = where;
+        window.firebaseGetDocs = getDocs;
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Ensure the root element takes full height */
+        #root {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-100 to-blue-200 dark:from-gray-800 dark:to-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Define a list of common categories
+        const predefinedCategories = [
+          'Animals', 'Fruits', 'Vegetables', 'Countries', 'Professions', 'Colors', 'Sports', 'Food'
+        ];
+
+        // Helper function to generate a random alphanumeric code
+        const generateRandomCode = (length = 6) => {
+          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+          let result = '';
+          for (let i = 0; i < length; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+          return result;
+        };
+
+        function App() {
+          const [category, setCategory] = React.useState('');
+          const [currentLetter, setCurrentLetter] = React.useState('A');
+          const [userInput, setUserInput] = React.useState('');
+          const [wordsFound, setWordsFound] = React.useState({}); // Stores words: { A: [], B: [] }
+          const [message, setMessage] = React.useState('');
+          const [showCategoryInput, setShowCategoryInput] = React.useState(true);
+          const [customCategoryInput, setCustomCategoryInput] = React.useState('');
+          const [showCustomCategoryField, setShowCustomCategoryField] = React.useState(false);
+          const [db, setDb] = React.useState(null);
+          const [auth, setAuth] = React.useState(null);
+          const [userId, setUserId] = React.useState(null);
+          const [isLoading, setIsLoading] = React.useState(true); // Loading state for Firebase
+          const [hint, setHint] = React.useState(''); // State for the generated hint
+          const [isHintLoading, setIsHintLoading] = React.useState(false); // Loading state for hint
+          const [isValidationLoading, setIsValidationLoading] = React.useState(false); // Loading state for word validation
+          const [userGameCode, setUserGameCode] = React.useState(''); // State for the user's generated game code
+          const [loadGameCodeInput, setLoadGameCodeInput] = React.useState(''); // Input for loading game by code
+          const [isCodeLoading, setIsCodeLoading] = React.useState(false); // Loading state for code operations
+          const [darkMode, setDarkMode] = React.useState(false); // State for dark mode
+          const [totalScore, setTotalScore] = React.useState(0); // State for current game score
+          const [categoryScores, setCategoryScores] = React.useState({}); // Stores high scores per category: { categoryName: highScore }
+          const [showScoreboard, setShowScoreboard] = React.useState(false); // State to toggle scoreboard visibility
+
+          const appId = window.__app_id;
+
+          // Initialize Firebase and authenticate
+          React.useEffect(() => {
+            try {
+              const firebaseConfig = JSON.parse(window.__firebase_config);
+              const app = window.firebaseApp;
+              const firestore = window.firebaseFirestore;
+              const firebaseAuth = window.firebaseAuth;
+
+              setDb(firestore);
+              setAuth(firebaseAuth);
+
+              const unsubscribe = window.firebaseOnAuthStateChanged(firebaseAuth, async (user) => {
+                if (user) {
+                  setUserId(user.uid);
+                  // Load data after authentication
+                  setIsLoading(false);
+                } else {
+                  try {
+                    const initialAuthToken = window.__initial_auth_token;
+                    if (initialAuthToken) {
+                      await window.firebaseSignInWithCustomToken(firebaseAuth, initialAuthToken);
+                    } else {
+                      await window.firebaseSignInAnonymously(firebaseAuth);
+                    }
+                  } catch (error) {
+                    console.error("Firebase authentication failed:", error);
+                    setMessage("Failed to authenticate. Please try again.");
+                    setIsLoading(false);
+                  }
+                }
+              });
+
+              return () => unsubscribe(); // Cleanup auth listener
+
+            } catch (error) {
+              console.error("Firebase initialization failed:", error);
+              setMessage("Firebase setup failed. Game cannot save progress.");
+              setIsLoading(false);
+            }
+          }, []);
+
+          // Load game state and scoreboard from Firestore
+          React.useEffect(() => {
+            if (db && userId && !isLoading) {
+              const userGameDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${userId}/gameData`, 'alphabetGame');
+              const userScoresDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${userId}/gameData`, 'scoreboard');
+              const userCodesCollectionRef = window.firebaseCollection(db, `artifacts/${appId}/public/data/user_codes`);
+
+              // Listener for current game data
+              const unsubscribeGameData = window.firebaseOnSnapshot(userGameDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                  const data = docSnap.data();
+                  setCategory(data.category || '');
+                  setCurrentLetter(data.currentLetter || 'A');
+                  setWordsFound(data.wordsFound || {});
+                  setTotalScore(data.totalScore || 0); // Load total score
+                  setShowCategoryInput(!data.category);
+                } else {
+                  console.log("No existing game data found for this user.");
+                  setShowCategoryInput(true);
+                  setTotalScore(0); // Reset score if no game data
+                }
+              }, (error) => {
+                console.error("Error fetching game data:", error);
+                setMessage("Error loading saved game data.");
+              });
+
+              // Listener for scoreboard data
+              const unsubscribeScoreboard = window.firebaseOnSnapshot(userScoresDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                  const data = docSnap.data();
+                  setCategoryScores(data.categoryScores || {});
+                } else {
+                  console.log("No existing scoreboard data found for this user.");
+                  setCategoryScores({});
+                }
+              }, (error) => {
+                console.error("Error fetching scoreboard data:", error);
+              });
+
+              // Check if this user already has a generated code
+              const q = window.firebaseQuery(userCodesCollectionRef, window.firebaseWhere("userId", "==", userId));
+              window.firebaseGetDocs(q).then((querySnapshot) => {
+                if (!querySnapshot.empty) {
+                  const existingCode = querySnapshot.docs[0].id;
+                  setUserGameCode(existingCode);
+                }
+              }).catch(error => {
+                console.error("Error checking for existing user code:", error);
+              });
+
+              return () => {
+                unsubscribeGameData();
+                unsubscribeScoreboard();
+              };
+            }
+          }, [db, userId, isLoading, appId]);
+
+          // Save game state to Firestore whenever relevant state changes
+          const saveGameState = React.useCallback(async () => {
+            if (db && userId && category) {
+              const userGameDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${userId}/gameData`, 'alphabetGame');
+              try {
+                await window.firebaseSetDoc(userGameDocRef, {
+                  category,
+                  currentLetter,
+                  wordsFound,
+                  totalScore, // Save total score
+                  timestamp: new Date()
+                }, { merge: true });
+              } catch (error) {
+                console.error("Error saving game data:", error);
+                setMessage("Failed to save progress.");
+              }
+            }
+          }, [db, userId, category, currentLetter, wordsFound, totalScore, appId]);
+
+          // Save scoreboard data to Firestore
+          const saveScoreboard = React.useCallback(async (scores) => {
+            if (db && userId) {
+              const userScoresDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${userId}/gameData`, 'scoreboard');
+              try {
+                await window.firebaseSetDoc(userScoresDocRef, { categoryScores: scores }, { merge: true });
+              } catch (error) {
+                console.error("Error saving scoreboard data:", error);
+              }
+            }
+          }, [db, userId, appId]);
+
+          // Debounce saving game state
+          React.useEffect(() => {
+            const handler = setTimeout(() => {
+              saveGameState();
+            }, 1000);
+
+            return () => {
+              clearTimeout(handler);
+            };
+          }, [category, currentLetter, wordsFound, totalScore, saveGameState]);
+
+          // Dark Mode Logic
+          React.useEffect(() => {
+            const savedMode = localStorage.getItem('darkMode');
+            if (savedMode) {
+              setDarkMode(JSON.parse(savedMode));
+            }
+          }, []);
+
+          React.useEffect(() => {
+            if (darkMode) {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+            localStorage.setItem('darkMode', JSON.stringify(darkMode));
+          }, [darkMode]);
+
+          const toggleDarkMode = () => {
+            setDarkMode(prevMode => !prevMode);
+          };
+
+          const handleStartGame = (selectedCategory) => {
+            // Save current game's score to scoreboard before starting new one
+            if (category && totalScore > 0) {
+              const updatedCategoryScores = { ...categoryScores };
+              updatedCategoryScores[category] = Math.max(updatedCategoryScores[category] || 0, totalScore);
+              setCategoryScores(updatedCategoryScores);
+              saveScoreboard(updatedCategoryScores);
+            }
+
+            setCategory(selectedCategory);
+            setCurrentLetter('A');
+            setWordsFound({});
+            setTotalScore(0); // Reset score for new game
+            setShowCategoryInput(false);
+            setMessage('');
+            setHint('');
+            setShowScoreboard(false); // Hide scoreboard when starting a new game
+          };
+
+          const handleCustomCategorySubmit = () => {
+            if (customCategoryInput.trim()) {
+              handleStartGame(customCategoryInput.trim());
+              setCustomCategoryInput('');
+              setShowCustomCategoryField(false);
+            } else {
+              setMessage('Please enter a custom category name.');
+            }
+          };
+
+          const checkWordCategory = async (word, category) => {
+            try {
+              const prompt = `Does '${word}' fit into the category '${category}'? Answer only with 'Yes' or 'No'.`;
+              let chatHistory = [];
+              chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+              const payload = { contents: chatHistory };
+              const apiKey = "";
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+              const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+
+              const result = await response.json();
+
+              if (result.candidates && result.candidates.length > 0 &&
+                  result.candidates[0].content && result.candidates[0].content.parts &&
+                  result.candidates[0].content.parts.length > 0) {
+                const answer = result.candidates[0].content.parts[0].text.trim().toLowerCase();
+                return answer === 'yes';
+              }
+              return false;
+            } catch (error) {
+              console.error("Error checking word category with Gemini API:", error);
+              return false;
+            }
+          };
+
+          const handleWordSubmit = async (e) => {
+            e.preventDefault();
+            const trimmedInput = userInput.trim();
+
+            if (!trimmedInput) {
+              setMessage('Please enter a word.');
+              return;
+            }
+
+            if (trimmedInput.toLowerCase().charAt(0) !== currentLetter.toLowerCase()) {
+              setMessage(`Word must start with '${currentLetter}'.`);
+              return;
+            }
+
+            const currentWordsForLetter = wordsFound[currentLetter] || [];
+            if (currentWordsForLetter.map(w => w.toLowerCase()).includes(trimmedInput.toLowerCase())) {
+              setMessage(`'${trimmedInput}' already added for '${currentLetter}'.`);
+              return;
+            }
+
+            setIsValidationLoading(true);
+            setMessage('Checking word category...');
+            const isWordCorrectForCategory = await checkWordCategory(trimmedInput, category);
+            setIsValidationLoading(false);
+
+            if (!isWordCorrectForCategory) {
+              setMessage(`'${trimmedInput}' does not seem to fit the category '${category}'.`);
+              return;
+            }
+
+            const updatedWordsFound = {
+              ...wordsFound,
+              [currentLetter]: [...currentWordsForLetter, trimmedInput]
+            };
+            setWordsFound(updatedWordsFound);
+            setTotalScore(prevScore => prevScore + 10); // Add 10 points for each correct word
+            setUserInput('');
+            setMessage(`'${trimmedInput}' added!`);
+            setHint('');
+          };
+
+          const navigateLetter = (direction) => {
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let currentIndex = alphabet.indexOf(currentLetter);
+            let newIndex;
+
+            if (direction === 'next') {
+              newIndex = (currentIndex + 1) % alphabet.length;
+            } else {
+              newIndex = (currentIndex - 1 + alphabet.length) % alphabet.length;
+            }
+            setCurrentLetter(alphabet[newIndex]);
+            setMessage('');
+            setUserInput('');
+            setHint('');
+          };
+
+          const resetGame = () => {
+            // Save current game's score to scoreboard before resetting
+            if (category && totalScore > 0) {
+              const updatedCategoryScores = { ...categoryScores };
+              updatedCategoryScores[category] = Math.max(updatedCategoryScores[category] || 0, totalScore);
+              setCategoryScores(updatedCategoryScores);
+              saveScoreboard(updatedCategoryScores);
+            }
+
+            setCategory('');
+            setCurrentLetter('A');
+            setWordsFound({});
+            setTotalScore(0); // Reset score
+            setUserInput('');
+            setMessage('');
+            setShowCategoryInput(true);
+            setShowCustomCategoryField(false);
+            setHint('');
+            setUserGameCode('');
+            setShowScoreboard(false); // Hide scoreboard on game reset
+          };
+
+          const getHint = async () => {
+            if (!category || !currentLetter) {
+              setMessage("Please select a category to get a hint.");
+              return;
+            }
+
+            setIsHintLoading(true);
+            setHint('');
+            setMessage('');
+
+            try {
+              const prompt = `Provide a single word that is a ${category} and starts with the letter ${currentLetter}. Respond only with the word.`;
+              let chatHistory = [];
+              chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+              const payload = { contents: chatHistory };
+              const apiKey = "";
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+              const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+
+              const result = await response.json();
+
+              if (result.candidates && result.candidates.length > 0 &&
+                  result.candidates[0].content && result.candidates[0].content.parts &&
+                  result.candidates[0].content.parts.length > 0) {
+                const suggestedWord = result.candidates[0].content.parts[0].text.trim();
+                if (suggestedWord.toLowerCase().charAt(0) === currentLetter.toLowerCase() && suggestedWord.length > 1) {
+                    setHint(suggestedWord);
+                } else {
+                    setHint("Could not generate a suitable hint. Try again!");
+                }
+              } else {
+                setHint("No hint could be generated. Try again!");
+              }
+            } catch (error) {
+              console.error("Error fetching hint from Gemini API:", error);
+              setMessage("Failed to get hint. Please try again later.");
+              setHint('');
+            } finally {
+              setIsHintLoading(false);
+            }
+          };
+
+          const generateUserGameCode = async () => {
+            if (!db || !userId || !category) {
+              setMessage("Please start a game first to generate a code.");
+              return;
+            }
+
+            setIsCodeLoading(true);
+            setMessage('Generating code...');
+            let newCode = '';
+            let codeExists = true;
+            const userCodesCollectionRef = window.firebaseCollection(db, `artifacts/${appId}/public/data/user_codes`);
+
+            while (codeExists) {
+              newCode = generateRandomCode();
+              const docRef = window.firebaseDoc(userCodesCollectionRef, newCode);
+              const docSnap = await window.firebaseGetDoc(docRef);
+              codeExists = docSnap.exists();
+            }
+
+            try {
+              await window.firebaseSetDoc(window.firebaseDoc(userCodesCollectionRef, newCode), {
+                userId: userId,
+                category: category,
+                createdAt: new Date(),
+              });
+              setUserGameCode(newCode);
+              setMessage(`Your game code is: ${newCode}. Save this to load your game later!`);
+            } catch (error) {
+              console.error("Error generating/saving user code:", error);
+              setMessage("Failed to generate game code.");
+            } finally {
+              setIsCodeLoading(false);
+            }
+          };
+
+          const loadGameByCode = async () => {
+            const codeToLoad = loadGameCodeInput.trim().toUpperCase();
+            if (!codeToLoad) {
+              setMessage('Please enter a game code.');
+              return;
+            }
+            if (!db || !userId) {
+              setMessage("Firebase not ready. Please wait.");
+              return;
+            }
+
+            setIsCodeLoading(true);
+            setMessage('Loading game...');
+            setHint('');
+
+            try {
+              const userCodesCollectionRef = window.firebaseCollection(db, `artifacts/${appId}/public/data/user_codes`);
+              const codeDocRef = window.firebaseDoc(userCodesCollectionRef, codeToLoad);
+              const codeDocSnap = await window.firebaseGetDoc(codeDocRef);
+
+              if (codeDocSnap.exists()) {
+                const codeData = codeDocSnap.data();
+                const originalUserId = codeData.userId;
+
+                const originalUserGameDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${originalUserId}/gameData`, 'alphabetGame');
+                const originalGameDocSnap = await window.firebaseGetDoc(originalUserGameDocRef);
+
+                if (originalGameDocSnap.exists()) {
+                  const loadedData = originalGameDocSnap.data();
+                  setCategory(loadedData.category || '');
+                  setCurrentLetter(loadedData.currentLetter || 'A');
+                  setWordsFound(loadedData.wordsFound || {});
+                  setTotalScore(loadedData.totalScore || 0); // Load total score
+                  setShowCategoryInput(false);
+                  setMessage(`Game loaded from code '${codeToLoad}'. Your new progress will be saved to your current User ID.`);
+                  setLoadGameCodeInput('');
+                  setShowScoreboard(false); // Hide scoreboard when loading a game
+                } else {
+                  setMessage(`No game data found for code '${codeToLoad}'.`);
+                }
+              } else {
+                setMessage(`Code '${codeToLoad}' not found.`);
+              }
+            } catch (error) {
+              console.error("Error loading game by code:", error);
+              setMessage("Failed to load game. Please check the code.");
+            } finally {
+              setIsCodeLoading(false);
+            }
+          };
+
+
+          if (isLoading) {
+            return (
+              <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                <div className="text-xl font-semibold">Loading game...</div>
+              </div>
+            );
+          }
+
+          return (
+            <div className={`min-h-screen flex flex-col items-center justify-center p-4 font-inter ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-purple-100 to-blue-200 text-gray-900'}`}>
+              <div className="absolute top-4 right-4">
+                <button
+                  onClick={toggleDarkMode}
+                  className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 shadow-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  aria-label="Toggle dark mode"
+                >
+                  {darkMode ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.325 3.325l-.707.707M6.372 6.372l-.707-.707M18.364 6.364l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9 9 0 008.354-5.646z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+
+              <div className={`p-8 rounded-2xl shadow-xl w-full max-w-2xl border ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-purple-300'}`}>
+                <h1 className={`text-4xl font-extrabold text-center mb-6 ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>
+                  Alphabet Categories Game
+                </h1>
+
+                {userId && (
+                  <p className={`text-sm text-center mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Your User ID: <span className={`font-mono px-2 py-1 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>{userId}</span>
+                  </p>
+                )}
+
+                {showCategoryInput ? (
+                  <div className="text-center">
+                    <p className={`text-xl mb-4 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Choose a category or create your own:</p>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      {predefinedCategories.map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => handleStartGame(cat)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300"
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setShowCustomCategoryField(!showCustomCategoryField)}
+                      className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300 mb-4"
+                    >
+                      {showCustomCategoryField ? 'Hide Custom Input' : 'Add Custom Category'}
+                    </button>
+
+                    {showCustomCategoryField && (
+                      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                        <input
+                          type="text"
+                          value={customCategoryInput}
+                          onChange={(e) => setCustomCategoryInput(e.target.value)}
+                          placeholder="Enter custom category name"
+                          className={`flex-grow p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 ${darkMode ? 'bg-gray-700 text-gray-100 border-gray-500' : 'border-gray-300'}`}
+                        />
+                        <button
+                          onClick={handleCustomCategorySubmit}
+                          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-300"
+                        >
+                          Start Custom Game
+                        </button>
+                      </div>
+                    )}
+
+                    <div className={`mt-8 pt-4 border-t ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                        <p className={`text-xl mb-4 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Or load an existing game:</p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                                type="text"
+                                value={loadGameCodeInput}
+                                onChange={(e) => setLoadGameCodeInput(e.target.value)}
+                                placeholder="Enter game code"
+                                className={`flex-grow p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-700 text-gray-100 border-gray-500' : 'border-gray-300'}`}
+                            />
+                            <button
+                                onClick={loadGameByCode}
+                                disabled={isCodeLoading}
+                                className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-orange-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isCodeLoading ? 'Loading...' : 'Load Game'}
+                            </button>
+                        </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <h2 className={`text-3xl font-semibold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                      Category: <span className={`${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{category}</span>
+                    </h2>
+                    <h3 className={`text-5xl font-extrabold mb-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Letter: {currentLetter}
+                    </h3>
+                    <p className={`text-2xl font-bold mb-4 ${darkMode ? 'text-yellow-300' : 'text-yellow-700'}`}>
+                        Score: {totalScore}
+                    </p>
+
+                    <form onSubmit={handleWordSubmit} className="flex flex-col sm:flex-row gap-2 mb-4">
+                      <input
+                        type="text"
+                        value={userInput}
+                        onChange={(e) => setUserInput(e.target.value)}
+                        placeholder={`Type a ${category} starting with ${currentLetter}...`}
+                        className={`flex-grow p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-700 text-gray-100 border-gray-500' : 'border-gray-300'}`}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isValidationLoading || isCodeLoading}
+                        className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isValidationLoading ? 'Checking...' : 'Add Word'}
+                      </button>
+                    </form>
+
+                    {message && (
+                      <p className="text-red-500 dark:text-red-400 mb-4 font-medium">{message}</p>
+                    )}
+
+                    <div className="mb-4 flex justify-center gap-4">
+                        <button
+                            onClick={getHint}
+                            disabled={isHintLoading || isValidationLoading || isCodeLoading}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-yellow-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isHintLoading ? 'Getting Hint...' : 'Get Hint ✨'}
+                        </button>
+                        <button
+                            onClick={generateUserGameCode}
+                            disabled={isCodeLoading || userGameCode !== ''}
+                            className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isCodeLoading ? 'Generating Code...' : (userGameCode ? `Your Code: ${userGameCode}` : 'Generate My Game Code')}
+                        </button>
+                    </div>
+                    {hint && (
+                        <p className={`mt-2 font-semibold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
+                            Hint: {hint}
+                        </p>
+                    )}
+                    {userGameCode && !message.includes("Your game code is:") && (
+                        <p className={`mt-2 font-semibold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            Your Game Code: <span className={`font-mono px-2 py-1 rounded-md ${darkMode ? 'bg-blue-800' : 'bg-blue-100'}`}>{userGameCode}</span>
+                        </p>
+                    )}
+
+
+                    <div className="mb-6">
+                      <h4 className={`text-xl font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Words for '{currentLetter}':</h4>
+                      <ul className={`list-disc list-inside text-left mx-auto max-w-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        {(wordsFound[currentLetter] || []).length > 0 ? (
+                          wordsFound[currentLetter].map((word, index) => (
+                            <li key={index} className="py-1">{word}</li>
+                          ))
+                        ) : (
+                          <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No words added yet for this letter.</p>
+                        )}
+                      </ul>
+                    </div>
+
+                    <div className="flex justify-center gap-4 mb-6">
+                      <button
+                        onClick={() => navigateLetter('prev')}
+                        disabled={isValidationLoading || isCodeLoading}
+                        className={`py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 disabled:opacity-50 disabled:cursor-not-allowed ${darkMode ? 'bg-gray-600 text-gray-200 hover:bg-gray-500 focus:ring-gray-400' : 'bg-gray-300 text-gray-800 hover:bg-gray-400 focus:ring-gray-200'}`}
+                      >
+                        Previous Letter
+                      </button>
+                      <button
+                        onClick={() => navigateLetter('next')}
+                        disabled={isValidationLoading || isCodeLoading}
+                        className={`py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 disabled:opacity-50 disabled:cursor-not-allowed ${darkMode ? 'bg-gray-600 text-gray-200 hover:bg-gray-500 focus:ring-gray-400' : 'bg-gray-300 text-gray-800 hover:bg-gray-400 focus:ring-gray-200'}`}
+                      >
+                        Next Letter
+                      </button>
+                    </div>
+
+                    <div className="mb-6">
+                        <button
+                            onClick={() => setShowScoreboard(!showScoreboard)}
+                            className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-teal-300"
+                        >
+                            {showScoreboard ? 'Hide Scoreboard' : 'View Scoreboard'}
+                        </button>
+
+                        {showScoreboard && (
+                            <div className={`mt-4 p-4 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                                <h4 className={`text-xl font-semibold mb-3 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Category High Scores:</h4>
+                                {Object.keys(categoryScores).length > 0 ? (
+                                    <ul className="list-none p-0">
+                                        {Object.entries(categoryScores)
+                                            .sort(([, scoreA], [, scoreB]) => scoreB - scoreA) // Sort by score descending
+                                            .map(([cat, score]) => (
+                                            <li key={cat} className={`flex justify-between py-1 border-b ${darkMode ? 'border-gray-600' : 'border-gray-200'} last:border-b-0`}>
+                                                <span className={`${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{cat}:</span>
+                                                <span className={`font-bold ${darkMode ? 'text-yellow-300' : 'text-yellow-700'}`}>{score} points</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No category scores yet. Play some games!</p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                      onClick={resetGame}
+                      disabled={isValidationLoading || isCodeLoading}
+                      className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Start New Game
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        // Render the React component into the root div
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
