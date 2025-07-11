@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alphabet Categories List Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX transformation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =================================================================================================
+        // IMPORTANT: MANUAL CONFIGURATION REQUIRED FOR DOWNLOADED HTML
+        // For Firebase features (saving, loading, game codes) to work when you download
+        // this HTML file and run it outside the Canvas environment, you MUST replace
+        // the placeholder values below with your actual Firebase project's configuration.
+        // You can find your Firebase config in your Firebase project settings (Project settings -> General -> Your apps).
+        // =================================================================================================
+
+        // 1. Replace 'default-app-id' with a unique string for YOUR app (e.g., 'my-alphabet-game-v1')
+        //    Using your Firebase Project ID for consistency.
+        window.__app_id = 'alphabetical-categories'; // <--- This is now correctly set to your project ID
+
+        // 2. Replace {} with your actual Firebase config object, wrapped in JSON.stringify()
+        //    This line has been updated with your provided Firebase configuration, correctly stringified.
+        window.__firebase_config = JSON.stringify({
+            apiKey: "AIzaSyC23w4Fv9MjdfsZAJzUug86FIe6JFu7eAI",
+            authDomain: "alphabetical-categories.firebaseapp.com",
+            projectId: "alphabetical-categories",
+            storageBucket: "alphabetical-categories.firebasestorage.app",
+            messagingSenderId: "924318513796",
+            appId: "1:924318513796:web:68b7264aad1992ca04a0d1",
+            measurementId: "G-L9WVD9KM7G"
+        }); // <--- THIS IS THE CORRECT FORMAT. NO COMMENTS INSIDE JSON.STRINGIFY()
+
+        // This token is provided by the Canvas environment; ensure it's null for local runs if not explicitly set.
+        if (typeof window.__initial_auth_token === 'undefined') {
+            window.__initial_auth_token = null;
+        }
+
+        // Make Firebase functions available globally for the React component
+        let firebaseConfigParsed;
+        let firebaseInitialized = false;
+        try {
+            firebaseConfigParsed = JSON.parse(window.__firebase_config);
+            // Basic check to see if config looks valid before initializing
+            if (Object.keys(firebaseConfigParsed).length > 0 && firebaseConfigParsed.projectId) {
+                window.firebaseApp = initializeApp(firebaseConfigParsed);
+                window.firebaseAuth = getAuth(window.firebaseApp);
+                window.firebaseFirestore = getFirestore(window.firebaseApp);
+                firebaseInitialized = true;
+            } else {
+                console.warn("Firebase config is missing or invalid. Firebase features will be disabled.");
+            }
+        } catch (e) {
+            console.error("Error parsing Firebase config. Firebase features will be disabled.", e);
+        }
+
+        // Provide global Firebase functions, or dummy functions if not initialized
+        window.firebaseSignInAnonymously = firebaseInitialized ? signInAnonymously : async (auth) => { console.warn("Firebase not configured. Anonymous sign-in unavailable."); throw new Error("Firebase not configured."); };
+        // Removed signInWithCustomToken as it's the source of auth/custom-token-mismatch errors in downloaded files
+        window.firebaseOnAuthStateChanged = firebaseInitialized ? onAuthStateChanged : (auth, callback) => { console.warn("Firebase not configured. Auth state changes unavailable."); callback(null); return () => {}; };
+        window.firebaseDoc = firebaseInitialized ? doc : (db, path, id) => { console.warn("Firebase not configured. Firestore doc unavailable."); return {}; };
+        window.firebaseSetDoc = firebaseInitialized ? setDoc : async (docRef, data, options) => { console.warn("Firebase not configured. Firestore setDoc unavailable."); };
+        window.firebaseGetDoc = firebaseInitialized ? getDoc : async (docRef) => ({ exists: () => false, data: () => ({}) });
+        window.firebaseOnSnapshot = firebaseInitialized ? onSnapshot : (ref, onNext, onError) => { console.warn("Firebase not configured. Firestore onSnapshot unavailable."); return () => {}; };
+        window.firebaseCollection = firebaseInitialized ? collection : (db, path) => { console.warn("Firebase not configured. Firestore collection unavailable."); return {}; };
+        window.firebaseQuery = firebaseInitialized ? query : (collectionRef, ...constraints) => { console.warn("Firebase not configured. Firestore query unavailable."); return {}; };
+        window.firebaseWhere = firebaseInitialized ? where : (field, op, value) => { console.warn("Firebase not configured. Firestore where unavailable."); return {}; };
+        window.firebaseGetDocs = firebaseInitialized ? getDocs : async (queryRef) => ({ empty: true, docs: [] });
+
+        // Global Firebase instances (will be null if not initialized)
+        window.firebaseApp = firebaseInitialized ? window.firebaseApp : null;
+        window.firebaseAuth = firebaseInitialized ? window.firebaseAuth : null;
+        window.firebaseFirestore = firebaseInitialized ? window.firebaseFirestore : null;
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Ensure the root element takes full height */
+        #root {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-100 to-blue-200 dark:from-gray-800 dark:to-gray-900">
+    <div id="root"></div>
+
+    <!-- Moved the React script to the very end of the body to ensure ReactDOM is loaded -->
+    <script type="text/babel">
+        // Define a list of common categories
+        const predefinedCategories = [
+          'Animals', 'Fruits', 'Vegetables', 'Countries', 'Professions', 'Colors', 'Sports', 'Food'
+        ];
+
+        // Helper function to generate a random alphanumeric code
+        const generateRandomCode = (length = 6) => {
+          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+          let result = '';
+          for (let i = 0; i < length; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+          return result;
+        };
+
+        function App() {
+          const [category, setCategory] = React.useState('');
+          const [currentLetter, setCurrentLetter] = React.useState('A');
+          const [userInput, setUserInput] = React.useState('');
+          const [wordsFound, setWordsFound] = React.useState({}); // Stores words: { A: [], B: [] }
+          const [message, setMessage] = React.useState('');
+          const [showCategoryInput, setShowCategoryInput] = React.useState(true);
+          const [customCategoryInput, setCustomCategoryInput] = React.useState('');
+          const [showCustomCategoryField, setShowCustomCategoryField] = React.useState(false);
+          const [db, setDb] = React.useState(null);
+          const [auth, setAuth] = React.useState(null);
+          const [userId, setUserId] = React.useState(null);
+          const [isLoading, setIsLoading] = React.useState(true); // Loading state for Firebase
+          const [userGameCode, setUserGameCode] = React.useState(''); // State for the user's generated game code
+          const [loadGameCodeInput, setLoadGameCodeInput] = React.useState(''); // Input for loading game by code
+          const [isCodeLoading, setIsCodeLoading] = React.useState(false); // Loading state for code operations
+          const [darkMode, setDarkMode] = React.useState(false); // State for dark mode
+          const [firebaseStatus, setFirebaseStatus] = React.useState('connecting'); // New state for Firebase connection status
+
+          const appId = window.__app_id;
+
+          // Initialize Firebase and authenticate
+          React.useEffect(() => {
+            const initFirebase = async () => {
+              try {
+                if (!window.firebaseAuth) { // If firebaseAuth is null, it means Firebase wasn't initialized in the module script
+                    setFirebaseStatus('disconnected');
+                    setIsLoading(false); // Ensure UI loads even if Firebase is disconnected
+                    return;
+                }
+
+                setDb(window.firebaseFirestore);
+                setAuth(window.firebaseAuth);
+
+                const unsubscribe = window.firebaseOnAuthStateChanged(window.firebaseAuth, async (user) => {
+                  if (user) {
+                    setUserId(user.uid);
+                    setFirebaseStatus('connected');
+                    setIsLoading(false);
+                  } else {
+                    try {
+                      // Always attempt anonymous sign-in if no user is authenticated.
+                      // This ensures it works for downloaded files where __initial_auth_token is null.
+                      await window.firebaseSignInAnonymously(window.firebaseAuth);
+                      setFirebaseStatus('connected');
+                    } catch (error) {
+                      console.error("Firebase authentication failed:", error);
+                      setMessage("Failed to authenticate. Game features requiring Firebase will not work.");
+                      setFirebaseStatus('disconnected');
+                      setIsLoading(false);
+                    }
+                  }
+                });
+
+                return () => unsubscribe();
+
+              } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                setMessage("Firebase setup failed. Game cannot save progress.");
+                setFirebaseStatus('disconnected');
+                setIsLoading(false);
+              }
+            };
+
+            // Set a timeout to ensure isLoading becomes false even if Firebase hangs or fails silently
+            const loadingTimeout = setTimeout(() => {
+                if (isLoading) {
+                    setIsLoading(false);
+                    if (firebaseStatus === 'connecting') { // If still connecting after timeout, assume disconnected
+                        setFirebaseStatus('disconnected');
+                        setMessage("Firebase connection timed out. Features requiring Firebase may not work.");
+                    }
+                }
+            }, 7000); // Increased timeout to 7 seconds for slower connections/initializations
+
+            initFirebase();
+
+            return () => clearTimeout(loadingTimeout);
+          }, []);
+
+          // Function to generate and save a user game code
+          const generateAndSaveUserGameCode = React.useCallback(async () => {
+            if (!db || !userId || firebaseStatus !== 'connected') {
+              console.log("Cannot generate code: Firebase DB, userId not available, or Firebase not connected.");
+              setMessage("Firebase not connected. Cannot generate code. Check console for details and ensure Firebase config is correct.");
+              return;
+            }
+            if (userGameCode) {
+                return;
+            }
+
+            setIsCodeLoading(true);
+            setMessage('Generating your game code...');
+            let newCode = '';
+            let codeExists = true;
+            const userCodesCollectionRef = window.firebaseCollection(db, `artifacts/${appId}/public/data/user_codes`);
+
+            while (codeExists) {
+              newCode = generateRandomCode();
+              const docRef = window.firebaseDoc(userCodesCollectionRef, newCode);
+              const docSnap = await window.firebaseGetDoc(docRef);
+              codeExists = docSnap.exists();
+            }
+
+            try {
+              await window.firebaseSetDoc(window.firebaseDoc(userCodesCollectionRef, newCode), {
+                userId: userId,
+                category: category || null,
+                createdAt: new Date(),
+              });
+              setUserGameCode(newCode);
+              setMessage(`Your game code is: ${newCode}. Save this to load your game later!`);
+            } catch (error) {
+              console.error("Error generating/saving user code:", error);
+              setMessage("Failed to generate game code. Check Firebase rules.");
+            } finally {
+              setIsCodeLoading(false);
+            }
+          }, [db, userId, userGameCode, appId, category, firebaseStatus]);
+
+          // Load game state from Firestore
+          React.useEffect(() => {
+            if (db && userId && firebaseStatus === 'connected') { // Only try to load if Firebase is connected
+              const userGameDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${userId}/gameData`, 'alphabetGame');
+              const userCodesCollectionRef = window.firebaseCollection(db, `artifacts/${appId}/public/data/user_codes`);
+
+              const unsubscribeGameData = window.firebaseOnSnapshot(userGameDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                  const data = docSnap.data();
+                  setCategory(data.category || '');
+                  setCurrentLetter(data.currentLetter || 'A');
+                  setWordsFound(data.wordsFound || {});
+                  setShowCategoryInput(!data.category);
+                } else {
+                  console.log("No existing game data found for this user.");
+                  setShowCategoryInput(true);
+                }
+              }, (error) => {
+                console.error("Error fetching game data:", error);
+                setMessage("Error loading saved game data. Check Firebase rules.");
+              });
+
+              const q = window.firebaseQuery(userCodesCollectionRef, window.firebaseWhere("userId", "==", userId));
+              window.firebaseGetDocs(q).then((querySnapshot) => {
+                if (!querySnapshot.empty) {
+                  const existingCode = querySnapshot.docs[0].id;
+                  setUserGameCode(existingCode);
+                } else {
+                  if (db && userId && !userGameCode && firebaseStatus === 'connected') {
+                      generateAndSaveUserGameCode();
+                  }
+                }
+              }).catch(error => {
+                console.error("Error checking for existing user code:", error);
+              });
+
+              return () => {
+                unsubscribeGameData();
+              };
+            }
+          }, [db, userId, isLoading, appId, generateAndSaveUserGameCode, userGameCode, firebaseStatus]);
+
+          // Save game state to Firestore whenever relevant state changes
+          const saveGameState = React.useCallback(async () => {
+            if (db && userId && category && firebaseStatus === 'connected') {
+              const userGameDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${userId}/gameData`, 'alphabetGame');
+              try {
+                await window.firebaseSetDoc(userGameDocRef, {
+                  category,
+                  currentLetter,
+                  wordsFound,
+                  timestamp: new Date()
+                }, { merge: true });
+              } catch (error) {
+                console.error("Error saving game data:", error);
+                setMessage("Failed to save progress. Check Firebase rules.");
+              }
+            }
+          }, [db, userId, category, currentLetter, wordsFound, appId, firebaseStatus]);
+
+          // Debounce saving game state
+          React.useEffect(() => {
+            const handler = setTimeout(() => {
+              saveGameState();
+            }, 1000);
+
+            return () => {
+              clearTimeout(handler);
+            };
+          }, [category, currentLetter, wordsFound, saveGameState]);
+
+          // Dark Mode Logic
+          React.useEffect(() => {
+            const savedMode = localStorage.getItem('darkMode');
+            if (savedMode) {
+              setDarkMode(JSON.parse(savedMode));
+            }
+          }, []);
+
+          React.useEffect(() => {
+            if (darkMode) {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+            localStorage.setItem('darkMode', JSON.stringify(darkMode));
+          }, [darkMode]);
+
+          const toggleDarkMode = () => {
+            setDarkMode(prevMode => !prevMode);
+          };
+
+          const handleStartGame = async (selectedCategory) => {
+            setCategory(selectedCategory);
+            setCurrentLetter('A');
+            setWordsFound({});
+            setShowCategoryInput(false);
+            setMessage('');
+
+            if (db && userId && userGameCode && firebaseStatus === 'connected') {
+                const userCodesCollectionRef = window.firebaseCollection(db, `artifacts/${appId}/public/data/user_codes`);
+                try {
+                    await window.firebaseSetDoc(window.firebaseDoc(userCodesCollectionRef, userGameCode), {
+                        category: selectedCategory,
+                    }, { merge: true });
+                } catch (error) {
+                    console.error("Error updating category in user code document:", error);
+                }
+            }
+          };
+
+          const handleCustomCategorySubmit = () => {
+            if (customCategoryInput.trim()) {
+              handleStartGame(customCategoryInput.trim());
+              setCustomCategoryInput('');
+              setShowCustomCategoryField(false);
+            } else {
+              setMessage('Please enter a custom category name.');
+            }
+          };
+
+          const handleWordSubmit = async (e) => {
+            e.preventDefault();
+            const trimmedInput = userInput.trim();
+
+            if (!trimmedInput) {
+              setMessage('Please enter a word.');
+              return;
+            }
+
+            if (trimmedInput.toLowerCase().charAt(0) !== currentLetter.toLowerCase()) {
+              setMessage(`Word must start with '${currentLetter}'.`);
+              return;
+            }
+
+            const currentWordsForLetter = wordsFound[currentLetter] || [];
+            if (currentWordsForLetter.map(w => w.toLowerCase()).includes(trimmedInput.toLowerCase())) {
+              setMessage(`'${trimmedInput}' already added for '${currentLetter}'.`);
+              return;
+            }
+
+            const updatedWordsFound = {
+              ...wordsFound,
+              [currentLetter]: [...currentWordsForLetter, trimmedInput]
+            };
+            setWordsFound(updatedWordsFound);
+            setUserInput('');
+            setMessage(`'${trimmedInput}' added!`);
+          };
+
+          const navigateLetter = (direction) => {
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let currentIndex = alphabet.indexOf(currentLetter);
+            let newIndex;
+
+            if (direction === 'next') {
+              newIndex = (currentIndex + 1) % alphabet.length;
+            } else {
+              newIndex = (currentIndex - 1 + alphabet.length) % alphabet.length;
+            }
+            setCurrentLetter(alphabet[newIndex]);
+            setMessage('');
+            setUserInput('');
+          };
+
+          const resetGame = async () => {
+            // Immediately update UI states to reflect reset
+            setCategory('');
+            setCurrentLetter('A');
+            setWordsFound({});
+            setUserInput('');
+            setMessage('');
+            setShowCategoryInput(true); // This is the key to return to category selection
+            setShowCustomCategoryField(false);
+
+            // Explicitly clear game data in Firestore on reset
+            if (db && userId && firebaseStatus === 'connected') {
+                const userGameDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${userId}/gameData`, 'alphabetGame');
+                try {
+                    // Setting category to null and other fields to default or empty
+                    await window.firebaseSetDoc(userGameDocRef, {
+                        category: null, // Set category to null to ensure setShowCategoryInput(!data.category) works on next load
+                        currentLetter: 'A',
+                        wordsFound: {},
+                        timestamp: new Date() // Update timestamp to reflect reset
+                    }, { merge: true }); // Use merge:true to avoid overwriting other potential fields
+                    console.log("Game data cleared in Firestore.");
+                } catch (error) {
+                    console.error("Error clearing game data in Firestore:", error);
+                    // Don't block UI reset even if Firestore clear fails
+                }
+            }
+          };
+
+          const loadGameByCode = async () => {
+            const codeToLoad = loadGameCodeInput.trim().toUpperCase();
+            if (!codeToLoad) {
+              setMessage('Please enter a game code.');
+              return;
+            }
+            if (!db || !userId || firebaseStatus !== 'connected') {
+              setMessage("Firebase not ready or connected. Please wait.");
+              return;
+            }
+
+            setIsCodeLoading(true);
+            setMessage('Loading game...');
+
+            try {
+              const userCodesCollectionRef = window.firebaseCollection(db, `artifacts/${appId}/public/data/user_codes`);
+              const codeDocRef = window.firebaseDoc(userCodesCollectionRef, codeToLoad);
+              const codeDocSnap = await window.firebaseGetDoc(codeDocRef);
+
+              if (codeDocSnap.exists()) {
+                const codeData = codeDocSnap.data();
+                const originalUserId = codeData.userId;
+
+                const originalUserGameDocRef = window.firebaseDoc(db, `artifacts/${appId}/users/${originalUserId}/gameData`, 'alphabetGame');
+                const originalGameDocSnap = await window.firebaseGetDoc(originalUserGameDocRef);
+
+                if (originalGameDocSnap.exists()) {
+                  const loadedData = originalGameDocSnap.data();
+                  setCategory(loadedData.category || '');
+                  setCurrentLetter(loadedData.currentLetter || 'A');
+                  setWordsFound(loadedData.wordsFound || {});
+                  setShowCategoryInput(false);
+                  setMessage(`Game loaded from code '${codeToLoad}'. Your new progress will be saved to your current User ID.`);
+                  setLoadGameCodeInput('');
+                } else {
+                  setMessage(`No game data found for code '${codeToLoad}'.`);
+                }
+              } else {
+                setMessage(`Code '${codeToLoad}' not found.`);
+              }
+            } catch (error) {
+              console.error("Error loading game by code:", error);
+              setMessage("Failed to load game. Please check the code and Firebase rules.");
+            } finally {
+              setIsCodeLoading(false);
+            }
+          };
+
+
+          if (isLoading) {
+            return (
+              <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                <div className="text-xl font-semibold">Loading game...</div>
+              </div>
+            );
+          }
+
+          return (
+            <div className={`min-h-screen flex flex-col items-center justify-center p-4 font-inter ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-purple-100 to-blue-200 text-gray-900'}`}>
+              <div className="absolute top-4 right-4 flex items-center space-x-2">
+                <span className={`text-sm font-medium ${firebaseStatus === 'connected' ? 'text-green-500' : 'text-red-500'}`}>
+                    Firebase: {firebaseStatus.charAt(0).toUpperCase() + firebaseStatus.slice(1)}
+                </span>
+                <button
+                  onClick={toggleDarkMode}
+                  className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 shadow-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  aria-label="Toggle dark mode"
+                >
+                  {darkMode ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.325 3.325l-.707.707M6.372 6.372l-.707-.707M18.364 6.364l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9 9 0 008.354-5.646z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+
+              <div className={`p-8 rounded-2xl shadow-xl w-full max-w-2xl border ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-purple-300'}`}>
+                <h1 className={`text-4xl font-extrabold text-center mb-6 ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>
+                  Alphabet Categories List Game
+                </h1>
+
+                {firebaseStatus === 'disconnected' && (
+                    <p className="text-red-500 dark:text-red-400 text-center mb-4 font-bold">
+                        Firebase is disconnected. Saving/loading features will not work. Please ensure your Firebase config in the HTML is correct and security rules allow access.
+                    </p>
+                )}
+                {message && (
+                  <p className="text-red-500 dark:text-red-400 mb-4 font-medium">{message}</p>
+                )}
+
+                {userId && (
+                  <p className={`text-sm text-center mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Your User ID: <span className={`font-mono px-2 py-1 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>{userId}</span>
+                  </p>
+                )}
+
+                {showCategoryInput ? (
+                  <div className="text-center">
+                    {userGameCode && (
+                        <p className={`mt-2 font-semibold mb-4 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            Your Game Code: <span className={`font-mono px-2 py-1 rounded-md ${darkMode ? 'bg-blue-800' : 'bg-blue-100'}`}>{userGameCode}</span>
+                        </p>
+                    )}
+                    <button
+                        onClick={generateAndSaveUserGameCode}
+                        disabled={isCodeLoading || userGameCode !== '' || firebaseStatus !== 'connected'}
+                        className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+                    >
+                        {isCodeLoading ? 'Generating Code...' : (userGameCode ? `Code Generated!` : 'Generate My Game Code')}
+                    </button>
+
+                    <p className={`text-xl mb-4 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Choose a category or create your own:</p>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      {predefinedCategories.map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => handleStartGame(cat)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300"
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setShowCustomCategoryField(!showCustomCategoryField)}
+                      className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300 mb-4"
+                    >
+                      {showCustomCategoryField ? 'Hide Custom Input' : 'Add Custom Category'}
+                    </button>
+
+                    {showCustomCategoryField && (
+                      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                        <input
+                          type="text"
+                          value={customCategoryInput}
+                          onChange={(e) => setCustomCategoryInput(e.target.value)}
+                          placeholder="Enter custom category name"
+                          className={`flex-grow p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 ${darkMode ? 'bg-gray-700 text-gray-100 border-gray-500' : 'border-gray-300'}`}
+                        />
+                        <button
+                          onClick={handleCustomCategorySubmit}
+                          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-300"
+                        >
+                          Start Custom Game
+                        </button>
+                      </div>
+                    )}
+
+                    <div className={`mt-8 pt-4 border-t ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                        <p className={`text-xl mb-4 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Or load an existing game:</p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                                type="text"
+                                value={loadGameCodeInput}
+                                onChange={(e) => setLoadGameCodeInput(e.target.value)}
+                                placeholder="Enter game code"
+                                className={`flex-grow p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-700 text-gray-100 border-gray-500' : 'border-gray-300'}`}
+                            />
+                            <button
+                                onClick={loadGameByCode}
+                                disabled={isCodeLoading || firebaseStatus !== 'connected'}
+                                className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-orange-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isCodeLoading ? 'Loading...' : 'Load Game'}
+                            </button>
+                        </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <h2 className={`text-3xl font-semibold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                      Category: <span className={`${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{category}</span>
+                    </h2>
+                    <h3 className={`text-5xl font-extrabold mb-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Letter: {currentLetter}
+                    </h3>
+
+                    <form onSubmit={handleWordSubmit} className="flex flex-col sm:flex-row gap-2 mb-4">
+                      <input
+                        type="text"
+                        value={userInput}
+                        onChange={(e) => setUserInput(e.target.value)}
+                        placeholder={`Type a word starting with ${currentLetter}...`}
+                        className={`flex-grow p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-700 text-gray-100 border-gray-500' : 'border-gray-300'}`}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isCodeLoading}
+                        className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Add Word
+                      </button>
+                    </form>
+
+                    {message && (
+                      <p className="text-red-500 dark:text-red-400 mb-4 font-medium">{message}</p>
+                    )}
+
+                    <div className="mb-4 flex justify-center gap-4">
+                        <button
+                            onClick={resetGame}
+                            disabled={isCodeLoading}
+                            className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Back to Main Screen
+                        </button>
+                    </div>
+
+                    <div className="mb-6">
+                      <h4 className={`text-xl font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>Words for '{currentLetter}':</h4>
+                      <ul className={`list-disc list-inside text-left mx-auto max-w-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        {(wordsFound[currentLetter] || []).length > 0 ? (
+                          wordsFound[currentLetter].map((word, index) => (
+                            <li key={index} className="py-1">{word}</li>
+                          ))
+                        ) : (
+                          <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No words added yet for this letter.</p>
+                        )}
+                      </ul>
+                    </div>
+
+                    <div className="flex justify-center gap-4 mb-6">
+                      <button
+                        onClick={() => navigateLetter('prev')}
+                        disabled={isCodeLoading}
+                        className={`py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 disabled:opacity-50 disabled:cursor-not-allowed ${darkMode ? 'bg-gray-600 text-gray-200 hover:bg-gray-500 focus:ring-gray-400' : 'bg-gray-300 text-gray-800 hover:bg-gray-400 focus:ring-gray-200'}`}
+                      >
+                        Previous Letter
+                      </button>
+                      <button
+                        onClick={() => navigateLetter('next')}
+                        disabled={isCodeLoading}
+                        className={`py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 disabled:opacity-50 disabled:cursor-not-allowed ${darkMode ? 'bg-gray-600 text-gray-200 hover:bg-gray-500 focus:ring-gray-400' : 'bg-gray-300 text-gray-800 hover:bg-gray-400 focus:ring-gray-200'}`}
+                      >
+                        Next Letter
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={resetGame}
+                      disabled={isCodeLoading}
+                      className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Start New Game
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        // Render the React component into the root div
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
